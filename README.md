@@ -34,7 +34,7 @@ This is a toy AO system with the parameters for the 8.4m Very Large Telescope wi
 
 The script will produce a movie `movie.mp4` and will generate frames for the movie and display them in real time, and the script typically takes 30 minutes on a modern computer to complete making the movie.
 
-The non-common path errors are shown in the Zernike decomposition plot in the lower right corner as the black line. Image frames from the Science Camera and WFS Camera are generated every 50 milliseconds, and after 3 seconds of images, the NCPA is calculated with PSI and applied to the estimated NCPA with a small gain. As the simulation progresses, the red 'corrected' curve gets smaller and smaller and converges to zero, showing that PSI is converging towards zero NCPA.
+The non-common path errors are shown in the Zernike decomposition plot in the lower right corner as the blue line. Image frames from the Science Camera and WFS Camera are generated every 50 milliseconds, and after 3 seconds of images, the NCPA is calculated with PSI and applied to the estimated NCPA with a small gain. As the simulation progresses, the red 'corrected' curve gets smaller and smaller and converges to zero, showing that PSI is converging towards zero NCPA.
 
 ## License
 
