@@ -28,6 +28,8 @@ See PSI in action by running `psi_ERIS.py`
 python psi_ERIS.py
 ```
 
+![Image from psi_ERIS.py simulation](PSI.jpg)
+
 This is a toy AO system with the parameters for the 8.4m Very Large Telescope with the 4 micron camera ERIS. The WFS is read out at 1000Hz, the science camera read out at 20 Hz. An ideal coronagraph is used in the simulation.
 
 The script will produce a movie `movie.mp4` and will generate frames for the movie and display them in real time, and the script typically takes 30 minutes on a modern computer to complete making the movie.
