@@ -6,7 +6,12 @@ The PSI code was written and developed by Emiel Por. Modifications (and subseque
 
 ## Dependencies
 
-Code requires `astropy` and `matplotlib` and `hcipy`.
+Code requires the following Python packages:
+  * `astropy`
+  * `matplotlib`
+  * `hcipy`
+
+The ffmpeg tools are required for generating movies.
 
 [HCIPy](https://github.com/ehpor/hcipy) is a Python software package written and developed by Emiel Por for performing end-to-end simulations of high contrast imaging instruments for astronomy.
 
@@ -19,7 +24,7 @@ pip install hcipy
 
 To install, clone this repository:
 ```
-clone https://github.com/mkenworthy/fepsi.git
+git clone https://github.com/mkenworthy/fepsi.git
 cd fepsi
 ```
 
