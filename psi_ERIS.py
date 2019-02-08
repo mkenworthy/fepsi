@@ -4,16 +4,16 @@ import matplotlib.pyplot as plt
 
 # psi_ERIS written by Emiel Por
 
-r0 = 0.05 # pupil_diameters
-L0 = 5 # pupil_diameters
+r0 = 0.05     # pupil_diameters
+L0 = 5        # pupil_diameters
 wind_velocity = np.array([2.0, 0]) # pupil_diameters per sec
 ao_framerate = 1000 # Hz
-ao_actuators = 20
-t_end = 3 # sec
-central_obscuration = 0.15
-ncpa_rms = 0.4 # rad
-wfs_noise = 0#.2
-num_photons = 1e3 # per exposure
+ao_actuators = 20   # across the diameter of the pupil
+t_psi = 3 # sec
+central_obscuration = 0.15 # fraction of telescope pupil diameter
+ncpa_rms = 0.4             # rad
+wfs_noise = 0
+num_photons = 1e3          # per exposure
 
 np.random.seed(0)
 
@@ -26,17 +26,14 @@ prop = FraunhoferPropagator(pupil_grid, focal_grid)
 aperture = make_obstructed_circular_aperture(1, central_obscuration)(pupil_grid)
 
 actuator_grid = make_pupil_grid(ao_actuators)
-ao_modes = make_gaussian_pokes(pupil_grid, actuator_grid, 1.2 / ao_actuators) ### not sure why 1.2/ ao-actuators?
+ao_modes = make_gaussian_pokes(pupil_grid, actuator_grid, 1.2 / ao_actuators)
 transformation_matrix = ao_modes.transformation_matrix
 reconstruction_matrix = inverse_tikhonov(transformation_matrix, 1e-4)
 
 coro = PerfectCoronagraph(aperture)
-#lyot_stop = make_obstructed_circular_aperture(0.98, 0.3)(pupil_grid)
-#coro = OpticalSystem([VortexCoronagraph(pupil_grid, 2), Apodizer(lyot_stop)])
 
-#layers = make_standard_atmospheric_layers(pupil_grid, 5)
 layers = [ModalAdaptiveOpticsLayer(InfiniteAtmosphericLayer(pupil_grid, Cn_squared_from_fried_parameter(r0, 1), L0, wind_velocity), ao_modes, 3)]
-#layers = [ModalAdaptiveOpticsLayer(InfiniteAtmosphericLayer(pupil_grid, Cn_squared_from_fried_parameter(r0, 1), L0, wind_velocity, use_interpolation=True), ao_modes, 3)]
+
 atmosphere = MultiLayerAtmosphere(layers)
 
 phi_I = 0
@@ -46,12 +43,10 @@ I_sum = 0
 
 zernike_modes = make_zernike_basis(30, 1, pupil_grid, 2)
 
-#ncpa = make_power_law_error(pupil_grid, ncpa_ptv, 1)
-#ncpa = 0.1 * zernike(2,0)(pupil_grid) + 0.1 * zernike(3,3)(pupil_grid) - 0.2 * zernike(3,-1)(pupil_grid)
 ncpa = zernike_modes.transformation_matrix.dot(np.random.randn(len(zernike_modes)) / (5 + np.arange(len(zernike_modes))))
 ncpa *= ncpa_rms / np.std(ncpa[aperture > 0.5])
+
 reconstructor_zernike = inverse_tikhonov(zernike_modes.transformation_matrix, 1e-3)
-#real_ncpa = prop(coro(Wavefront(aperture * np.exp(1j * ncpa)))).electric_field
 
 wf = Wavefront(aperture)
 wf.total_power = num_photons
@@ -59,19 +54,19 @@ img_ref = prop(wf).power
 
 mw = FFMpegWriter('movie.mp4')
 
-N = t_end * ao_framerate
+N_wfs = t_psi * ao_framerate
 
 correction = 0
 
-for iter in range(20):
+for iter in range(20): # do 20 iterations over t_psi
 	I_sum = 0
 	phi_sum = 0
 	phi_2 = 0
 	phi_I = 0
 
-	for i, t in enumerate(np.arange(N) / ao_framerate):
-		atmosphere.evolve_until(t + iter * t_end)
-		print(t)
+	for i, t in enumerate(np.arange(N_wfs) / ao_framerate):
+		atmosphere.evolve_until(t + iter * t_psi)
+		print('Time t={:5.3f} sec'.format(t))
 
 		wf = Wavefront(aperture)
 		wf.total_power = num_photons
@@ -79,11 +74,12 @@ for iter in range(20):
 
 		wf_post_coro = wf_post_ao.copy()
 		wf_post_coro.electric_field *= np.exp(1j * ncpa) * np.exp(1j * correction)
+
 		if coro is not None:
 			wf_post_coro = coro(wf_post_coro)
 
-		img = prop(wf_post_coro).power
-		img_noisy = large_poisson(img) + 1e-10
+		I_sci = prop(wf_post_coro).power
+		I_sci_noisy = large_poisson(I_sci) + 1e-10
 
 		wfs_measurement = reconstruction_matrix.dot(np.angle(wf_post_ao.electric_field / wf_post_ao.electric_field.mean()))
 		wfs_measurement_noisy = wfs_measurement * (1 + np.random.randn(len(wfs_measurement)) * wfs_noise)
@@ -97,25 +93,26 @@ for iter in range(20):
 		else:
 			reconstructed_electric_field = prop(coro(Wavefront(reconstructed_pupil))).electric_field
 
-		phi_I += reconstructed_electric_field * img_noisy
+		phi_I += reconstructed_electric_field * I_sci_noisy
 		phi_2 += np.abs(reconstructed_electric_field)**2
 		phi_sum += reconstructed_electric_field
-		I_sum += img_noisy
+		I_sum += I_sci_noisy
 
 		psi_estimate = (phi_I - phi_sum * I_sum / (i+1)) / (phi_2 - np.abs(phi_sum / (i+1))**2)
 
 		wf = Wavefront(psi_estimate * circular_aperture(15)(focal_grid))
-		#wf.electric_field *= np.exp(-2j * focal_grid.as_('polar').theta)
+
 		pup = prop.backward(wf)
+
 		ncpa_estimate = pup.electric_field.imag
 
-		if i % 50 == 0:
+		if i % 50 == 0: # make a plot every 50 WFS frames
 			m_original = reconstructor_zernike.dot(ncpa * aperture)
 			m_corrected = reconstructor_zernike.dot((ncpa + correction) * aperture)
 			rms = np.std(zernike_modes.transformation_matrix.dot(reconstructor_zernike.dot((ncpa + correction)))[aperture > 0.5]) * 3000 / 2 / np.pi
 
 			plt.clf()
-			plt.suptitle('iter=%d; t=%0.3f; npca=%0.1f nm rms' % (iter, t+iter*t_end, rms))
+			plt.suptitle('iter=%d; t=%0.3f; npca=%0.1f nm rms' % (iter, t+iter*t_psi, rms))
 			plt.subplot(2,3,1)
 			imshow_field(np.log10(I_sum / (i+1) / img_ref.max()), vmin=-4, vmax=-2)
 			plt.title("Science Camera Intensity")
@@ -132,7 +129,7 @@ for iter in range(20):
 			imshow_field(ncpa_estimate * aperture, cmap='RdBu', mask=aperture)
 			plt.title("NCPA Estimate in Pupil")
 			ax = plt.subplot(2,3,6)
-			#imshow_field((ncpa + correction) * aperture, cmap='RdBu', mask=aperture)
+
 			plt.plot(m_original * 3000 / 2 / np.pi, 'ro-', label='Uncorrected')
 			plt.plot(m_corrected * 3000 / 2 / np.pi, 'bo-', label='Corrected')
 			plt.legend()
