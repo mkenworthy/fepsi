@@ -28,23 +28,25 @@ np.random.seed(0)
 
 #############################################################
 
-pupil_grid = make_pupil_grid(128)
-focal_grid = make_focal_grid(pupil_grid, 4, 16)
+pupil_grid = make_pupil_grid(256)
+focal_grid = make_focal_grid(4, 16)
 prop = FraunhoferPropagator(pupil_grid, focal_grid)
 
 aperture = make_obstructed_circular_aperture(1, central_obscuration)(pupil_grid)
 
-actuator_grid = make_pupil_grid(ao_actuators)
-ao_modes = make_gaussian_pokes(pupil_grid, actuator_grid, 1.2 / ao_actuators) ### not sure why 1.2/ ao-actuators?
+#actuator_grid = make_pupil_grid(ao_actuators)
+#ao_modes = make_gaussian_pokes(pupil_grid, actuator_grid, 1.2 / ao_actuators) ### not sure why 1.2/ ao-actuators?
+ao_modes = make_gaussian_influence_functions(pupil_grid, ao_actuators, 1.0 / ao_actuators)
+ao_modes = ModeBasis([mode * aperture for mode in ao_modes])
 transformation_matrix = ao_modes.transformation_matrix
-reconstruction_matrix = inverse_tikhonov(transformation_matrix, 1e-4)
+reconstruction_matrix = inverse_tikhonov(transformation_matrix, 1e-2)
 
 coro = PerfectCoronagraph(aperture)
 #lyot_stop = make_obstructed_circular_aperture(0.98, 0.3)(pupil_grid)
 #coro = OpticalSystem([VortexCoronagraph(pupil_grid, 2), Apodizer(lyot_stop)])
 
 #layers = make_standard_atmospheric_layers(pupil_grid, 5)
-layers = [ModalAdaptiveOpticsLayer(InfiniteAtmosphericLayer(pupil_grid, Cn_squared_from_fried_parameter(r0, 1), L0, wind_velocity), ao_modes, 3)]
+layers = [ModalAdaptiveOpticsLayer(InfiniteAtmosphericLayer(pupil_grid, Cn_squared_from_fried_parameter(r0, 1), L0, wind_velocity, use_interpolation=True), ao_modes, 3)]
 #layers = [ModalAdaptiveOpticsLayer(InfiniteAtmosphericLayer(pupil_grid, Cn_squared_from_fried_parameter(r0, 1), L0, wind_velocity, use_interpolation=True), ao_modes, 3)]
 atmosphere = MultiLayerAtmosphere(layers)
 
@@ -72,14 +74,14 @@ N = t_end * ao_framerate
 
 correction = 0
 
-for iter in range(20):
+for it in range(20):
 	I_sum = 0
 	phi_sum = 0
 	phi_2 = 0
 	phi_I = 0
 
 	for i, t in enumerate(np.arange(N) / ao_framerate):
-		atmosphere.evolve_until(t + iter * t_end)
+		atmosphere.evolve_until(t + it * t_end)
 		print(t)
 
 		wf = Wavefront(aperture)
@@ -94,7 +96,7 @@ for iter in range(20):
 		img = prop(wf_post_coro).power
 		img_noisy = large_poisson(img) + 1e-10
 
-		wfs_measurement = reconstruction_matrix.dot(np.angle(wf_post_ao.electric_field / wf_post_ao.electric_field.mean()))
+		wfs_measurement = reconstruction_matrix.dot(np.angle(wf_post_ao.electric_field / wf_post_ao.electric_field.mean()) * aperture)
 		wfs_measurement_noisy = wfs_measurement * (1 + np.random.randn(len(wfs_measurement)) * wfs_noise)
 
 		reconstructed_pupil = aperture * np.exp(1j * transformation_matrix.dot(wfs_measurement_noisy))
@@ -124,7 +126,7 @@ for iter in range(20):
 			rms = np.std(zernike_modes.transformation_matrix.dot(reconstructor_zernike.dot((ncpa + correction)))[aperture > 0.5]) * 3000 / 2 / np.pi
 
 			plt.clf()
-			plt.suptitle('iter=%d; t=%0.3f; npca=%0.1f nm rms' % (iter, t+iter*t_end, rms))
+			plt.suptitle('iter=%d; t=%0.3f; npca=%0.1f nm rms' % (it, t+it*t_end, rms))
 			plt.subplot(2,3,1)
 			imshow_field(np.log10(I_sum / (i+1) / img_ref.max()), vmin=-4, vmax=-2)
 			plt.title("Science Camera Intensity")
@@ -152,5 +154,5 @@ for iter in range(20):
 			plt.draw()
 			plt.pause(0.01)
 			mw.add_frame()
-	correction += -0.05 * ncpa_estimate
+	correction += -0.005 * ncpa_estimate
 mw.close()
